@@ -8,32 +8,32 @@ from scipy.integrate import quad
 
 
 
-def logistic_model(theta, alpha, beta, r):
+def logistic_model(theta, alpha, beta, c):
     """
     Logistic model with three parameters.
     Args:
         theta (float): Ability parameter.
         alpha (float): Discrimination parameter.
         beta (float): Difficulty parameter.
-        r (float): Guessing parameter.
+        c(float): Guessing parameter.
     Returns:
         float: Probability of success.
     """
-    return r + (1.0 - r) / (1 + np.exp(-alpha * (theta - beta)))
+    return c + (1.0 - c) / (1 + np.exp(-alpha * (theta - beta)))
 
 
-def error_probability(theta, alpha=1, beta=5, r=0.2):
+def error_probability(theta, alpha=1, beta=5, c=0.2):
     """
     Computes the probability of error.
     Args:
         theta (float): Ability parameter.
         alpha (float): Discrimination parameter.
         beta (float): Difficulty parameter.
-        r (float): Guessing parameter.
+        c (float): Guessing parameter.
     Returns:
         float: Probability of error.
     """
-    return 1 - logistic_model(theta, alpha, beta, r)
+    return 1 - logistic_model(theta, alpha, beta, c)
 
 
 def logistic_no_guessing(theta, alpha=1, beta=5):
@@ -62,19 +62,19 @@ def error_probability_no_guessing(theta, alpha=1, beta=5):
     return 1 - logistic_no_guessing(theta, alpha, beta)
 
 
-def weight_function(theta, alpha=1, beta=5, r=0.2):
+def weight_function(theta, alpha=1, beta=5, c=0.2):
     """
     Auxiliary weight function for estimation.
     Args:
         theta (float): Ability parameter.
         alpha (float): Discrimination parameter.
         beta (float): Difficulty parameter.
-        r (float): Guessing parameter.
+        c (float): Guessing parameter.
     Returns:
         float: Weight value.
     """
-    p = logistic_model(theta, alpha, beta, r)
-    q = error_probability(theta, alpha, beta, r)
+    p = logistic_model(theta, alpha, beta, c)
+    q = error_probability(theta, alpha, beta, c)
     return logistic_no_guessing(theta, alpha, beta) * error_probability_no_guessing(theta, alpha, beta) / (p * q)
 
 
@@ -255,7 +255,7 @@ class Question:
             / (p * q)
         )
 
-    def fisher_information(self, theta, guessing_param=0.2, alpha=0.1, beta=50):
+    def fisher_information(self, theta):
         """
         Compute the Fisher information for the question.
         Args:
@@ -267,7 +267,7 @@ class Question:
             float: Fisher information.
         """
         p = self.probability_correct(theta)
-        return alpha**2 * (1 - p) * ((p - guessing_param) / (1 - guessing_param))**2 / p
+        return self.alpha**2 * (1 - p) * ((p - self.guessing_param) / (1 - self.guessing_param))**2 / p
 
     def make_figure(
         self,
@@ -276,6 +276,7 @@ class Question:
         file_format='.eps',
         reference_curve=True,
         title='Question',
+        xlim=[-4,4],
         mean_ability=0,
         std_ability=1,
         show_experimental=True
@@ -293,35 +294,35 @@ class Question:
             std_ability (float): Standard deviation of ability for rescaling.
             show_experimental (bool): Whether to display experimental data points.
         """
-        x_values = np.linspace(0, 100, 100)
+        x_values = np.linspace(xlim[0], xlim[1], 100)
 
         # Plot experimental data points
         if show_experimental:
             plt.plot(
-                self.expected_correct_pattern[0] * std_ability + mean_ability,
-                self.expected_correct_pattern[1],
                 linewidth=0,
                 marker='o',
                 alpha=0.1,
                 color='blue',
                 markersize=1.5
             )
+        
 
         # Plot reference curve
         if reference_curve:
             plt.plot(
                 x_values,
-                logistic_model(x_values, r=0.15, alpha=0.1, beta=65),
+                logistic_model(x_values, r=0.15, alpha=2, beta=0),
                 label='Reference',
                 color='red'
             )
             plt.ylim(0, 1)
             plt.plot(
                 x_values,
-                100 * fisher_information(x_values, r=0.15, alpha=0.1, beta=65),
+                fisher_information(x_values, r=0.15, alpha=2, beta=0),
                 linestyle='dashed',
                 color='red'
             )
+        plt.xlim(xlim[0], xlim[1])
 
         # Plot question-specific curve
         plt.plot(
@@ -344,25 +345,31 @@ class Question:
         plt.savefig(f"{target_folder}{file_name}{file_format}")
         plt.cla()
 
+def P_3PL(theta, a_i, b_i, c_i):
+    return c_i + (1 - c_i) / (1 + np.exp(-a_i * (theta - b_i)))
 
 class Student:
     """
     Represents a student in the test analysis.
     """
 
-    def __init__(self, student_index, responses, parameters):
+    def __init__(self, student_index=0, responses=np.nan,ability=0,parameters=None):
         """
         Initialize the Student instance.
         Args:
             student_index (int): Index of the student.
-            responses (DataFrame): Responses data.
-            parameters (DataFrame): Parameters for the questions.
+            responses (ndarray): Array of responses (0 for incorrect, 1 for correct).
+            ability (Float): ability of the student, to be given or estimated by irt.
+            
         """
         self.index = student_index
-        self.data = responses[responses['candidate'] == student_index]
-        self.parameters = parameters
-        self.correct_responses = self.get_correct_responses()
-        self.ability = float(self.data['ability'])
+        self.responses = responses
+        self.ability = ability
+        self.parameters=parameters
+
+    def set_parameters(self):
+        self.parameters=parameters
+        return True
 
     def get_correct_responses(self):
         """
@@ -376,7 +383,7 @@ class Student:
             responses.append(self.data[k])
         return np.asarray(responses)
 
-    def log_likelihood(self, theta):
+    def log_likelihood(self, theta=np.nan):
         """
         Compute the log-likelihood for a given ability parameter.
         Args:
@@ -384,17 +391,16 @@ class Student:
         Returns:
             float: Log-likelihood value.
         """
-        self.parameters['null'] = (
-            (self.parameters['prob_correct'] > 0.999)
-            | ((self.parameters['question'] >= 25) & (self.parameters['question'] <= 36))
-        )
-        self.parameters['null'] = self.parameters['null'].replace({True: 1.0, False: 0.0})
+        if np.isnan(theta):
+            theta=self.ability
 
-        self.parameters['P'] = self.parameters['guessing'] + (
-            1.0 - self.parameters['guessing']
-        ) / (1 + np.exp(-self.parameters['discrimination'] * (theta - self.parameters['difficulty'])))
+
+
+        self.parameters['P'] = self.parameters['c'] + (
+            1.0 - self.parameters['c']
+        ) / (1 + np.exp(-self.parameters['a'] * (theta - self.parameters['b'])))
         self.parameters['Q'] = 1 - self.parameters['P']
-        self.parameters['response_ij'] = self.correct_responses
+        self.parameters['response_ij'] = self.responses
         self.parameters['log_likelihood_ij'] = (
             1 - self.parameters['null']
         ) * (
@@ -424,6 +430,13 @@ class Student:
         self.ability = float(theta)
         return self.ability
 
+    def likelihood(self,theta=np.nan):
+        if np.isnan(theta):
+            theta=self.ability
+
+        prob = [logistic_model(theta, self.parameters['a'][i], self.parameters['b'][i], self.parameters['c'][i]) for i in range(len(self.responses))]
+        return np.prod([p if r == 1 else (1 - p) for p, r in zip(prob, self.responses)])
+
     def calculate_ability(self, method='NM'):
         """
         Calculate the student's ability using optimization.
@@ -444,6 +457,23 @@ class Student:
             # Placeholder for Newton-Raphson logic
             pass
 
+        if method == 'EAP':  # Expected a posteriori
+            # Adjusted a posteriori probability distribution
+            def posterior(theta, a, b, c, responses):
+                prior = norm.pdf(theta, loc=0, scale=1)  # Prior normal distribution
+                return self.likelihood(theta) * prior
+
+            # Estimação por EAP ajustada
+            def eap(a, b, c, responses):
+                numerator = lambda theta: theta * posterior(theta, self.parameters['a'], self.parameters['b'], self.parameters['c'], self.responses)
+                denominator = lambda theta: posterior(theta, self.parameters['a'], self.parameters['b'], self.parameters['c'], self.responses)
+                
+                num = quad(numerator, -4, 4)[0]
+                denom = quad(denominator, -4, 4)[0]
+                return num/denom
+            self.ability=eap(self.parameters['a'],self.parameters['b'],self.parameters['c'],self.responses)                
+            pass
+
     def print_summary(self):
         """
         Print a summary of the student's details.
@@ -452,5 +482,35 @@ class Student:
         """
         print('Index:', self.index)
         print('Ability:', self.ability)
-        print('Log(L):', self.log_likelihood(self.ability))
+        #print('Log(L):', self.log_likelihood(self.ability))
         return True
+
+#######################################  TESTING SECTION ######################################33
+
+###  Testing question class
+
+# print('Testing Question Class...')
+# question=Question()
+# print('Default parameters:',question.alpha, question.beta, question.guessing_param)
+# question.set_alpha(1.5)
+# question.set_beta(-0.2)
+# question.set_guessing_param(0.15)
+# print('Default parameters:',question.alpha, question.beta, question.guessing_param)
+# print('P(X=1|theta=0):',question.probability_correct(0))
+# print('Correctness a priori probability:',question.prior_probability_correct())
+# question.make_figure()
+
+###Fictious test
+# a = np.asarray([1.0, 1.0, 1])  # discriminação
+# b = np.asarray([1.0, 3.0,3] ) # dificuldade
+# c = np.asarray([0.2, 0.2,0.2])  # acerto ao acaso (para 3PL)
+# null=np.asarray([0,0,0])
+# parametersStudents={'a':a,'b':b,'c':c,'null':null}
+
+
+### Testing student class
+# responsesStudent = [1, 0,1]  # padrão de respostas (1 = correto, 0 = incorreto)
+# student=Student(ability=2,responses=responsesStudent,parameters=parametersStudents)
+# student.print_summary()
+# student.calculate_ability(method='EAP')
+# student.print_summary()

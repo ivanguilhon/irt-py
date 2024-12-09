@@ -11,6 +11,7 @@ print('Default parameters:',question.alpha, question.beta, question.guessing_par
 print('P(X=1|theta=0):',question.probability_correct(0))
 print('Correctness a priori probability:',question.prior_probability_correct())
 
+question.make_figure()
 
 
 
