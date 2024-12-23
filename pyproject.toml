@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "irt-py"
+name = "irtkit"
 version = "0.1.0"
 description = "Item Response Theory in Python"
 authors = ["Ivan Guilhon <ivanguilhonn@gmail.com>"]
