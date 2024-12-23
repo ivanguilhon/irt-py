@@ -7,7 +7,6 @@ from scipy.stats import norm
 from scipy.integrate import quad
 
 
-
 def logistic_model(theta, alpha, beta, c):
     """
     Logistic model with three parameters.
@@ -75,10 +74,14 @@ def weight_function(theta, alpha=1, beta=5, c=0.2):
     """
     p = logistic_model(theta, alpha, beta, c)
     q = error_probability(theta, alpha, beta, c)
-    return logistic_no_guessing(theta, alpha, beta) * error_probability_no_guessing(theta, alpha, beta) / (p * q)
+    return (
+        logistic_no_guessing(theta, alpha, beta)
+        * error_probability_no_guessing(theta, alpha, beta)
+        / (p * q)
+    )
 
 
-def fisher_information(theta, alpha=0.1, beta=50,r=0.2 ):
+def fisher_information(theta, alpha=0.1, beta=50, r=0.2):
     """
     Computes the Fisher information.
     Args:
@@ -90,13 +93,14 @@ def fisher_information(theta, alpha=0.1, beta=50,r=0.2 ):
         float: Fisher information.
     """
     p = logistic_model(theta, alpha, beta, r)
-    return alpha**2 * (1 - p) * ((p - r) / (1 - r))**2 / p
+    return alpha**2 * (1 - p) * ((p - r) / (1 - r)) ** 2 / p
 
 
 class Question:
     """
     Represents a question in a test with parameters and response analysis.
     """
+
     def __init__(self, question_index=0, alpha=1.0, beta=0, guessing_param=0.2):
         """
         Initialize the Question instance.
@@ -105,7 +109,7 @@ class Question:
             responses (DataFrame): Responses data.
         """
         self.question_index = question_index
-        self.correct_answer = 'Z'
+        self.correct_answer = "Z"
         self.alpha = alpha
         self.beta = beta
         self.guessing_param = guessing_param
@@ -121,28 +125,35 @@ class Question:
         """
         step_size = int(self.num_responses / num_steps)
         k = 0
-        mean_points = responses['Standardized Points'].mean()
-        std_points = responses['Standardized Points'].std()
+        mean_points = responses["Standardized Points"].mean()
+        std_points = responses["Standardized Points"].std()
         ability_summary = []
         correct_summary = []
-        sorted_responses = responses.sort_values('Standardized Points', ascending=True)
-        abilities = (sorted_responses['Standardized Points'] - mean_points) / std_points
+        sorted_responses = responses.sort_values("Standardized Points", ascending=True)
+        abilities = (sorted_responses["Standardized Points"] - mean_points) / std_points
         correct_pattern = sorted_responses[self.question_index]
 
         while (k + 1) * step_size < self.num_responses:
-            ability_summary.append(abilities[k * step_size:(k + 1) * step_size].mean())
-            correct_summary.append(correct_pattern[k * step_size:(k + 1) * step_size].mean())
+            ability_summary.append(
+                abilities[k * step_size : (k + 1) * step_size].mean()
+            )
+            correct_summary.append(
+                correct_pattern[k * step_size : (k + 1) * step_size].mean()
+            )
             k += 1
 
         popt, _ = opt.curve_fit(
-            logistic_model, 
-            np.array(ability_summary), 
-            np.array(correct_summary), 
-            p0=[0.1, 3, 0.2], 
-            bounds=([0, -5, 0], [1.5, 5, 1])
+            logistic_model,
+            np.array(ability_summary),
+            np.array(correct_summary),
+            p0=[0.1, 3, 0.2],
+            bounds=([0, -5, 0], [1.5, 5, 1]),
         )
 
-        self.expected_correct_pattern = [np.asarray(ability_summary), np.asarray(correct_summary)]
+        self.expected_correct_pattern = [
+            np.asarray(ability_summary),
+            np.asarray(correct_summary),
+        ]
         self.set_alpha(popt[0])
         self.set_beta(popt[1])
         self.set_guessing_param(popt[2])
@@ -162,11 +173,9 @@ class Question:
         """
         Calculate a prior probability of correctness.
         """
-        f =lambda x: ( norm.pdf(x, loc=0.0, scale=1.0) * self.probability_correct(x) )
-        
+        f = lambda x: (norm.pdf(x, loc=0.0, scale=1.0) * self.probability_correct(x))
 
-
-        return quad(f,-4,4)[0]
+        return quad(f, -4, 4)[0]
 
     def set_alpha(self, alpha):
         """
@@ -207,7 +216,9 @@ class Question:
         Returns:
             float: Probability of a correct response.
         """
-        return self.guessing_param + (1.0 - self.guessing_param) / (1 + np.exp(-self.alpha * (theta - self.beta)))
+        return self.guessing_param + (1.0 - self.guessing_param) / (
+            1 + np.exp(-self.alpha * (theta - self.beta))
+        )
 
     def probability_incorrect(self, theta):
         """
@@ -267,23 +278,28 @@ class Question:
             float: Fisher information.
         """
         p = self.probability_correct(theta)
-        return self.alpha**2 * (1 - p) * ((p - self.guessing_param) / (1 - self.guessing_param))**2 / p
+        return (
+            self.alpha**2
+            * (1 - p)
+            * ((p - self.guessing_param) / (1 - self.guessing_param)) ** 2
+            / p
+        )
 
     def make_figure(
         self,
-        target_folder='./',
-        file_name='question',
-        file_format='.eps',
+        target_folder="./",
+        file_name="question",
+        file_format=".eps",
         reference_curve=True,
-        title='Question',
-        xlim=[-4,4],
+        title="Question",
+        xlim=[-4, 4],
         mean_ability=0,
         std_ability=1,
-        show_experimental=True
+        show_experimental=True,
     ):
         """
         Generates and saves a plot for the question's probability curve and Fisher information.
-        
+
         Args:
             target_folder (str): Folder path to save the figure.
             file_name (str): Name of the output file.
@@ -298,29 +314,22 @@ class Question:
 
         # Plot experimental data points
         if show_experimental:
-            plt.plot(
-                linewidth=0,
-                marker='o',
-                alpha=0.1,
-                color='blue',
-                markersize=1.5
-            )
-        
+            plt.plot(linewidth=0, marker="o", alpha=0.1, color="blue", markersize=1.5)
 
         # Plot reference curve
         if reference_curve:
             plt.plot(
                 x_values,
                 logistic_model(x_values, r=0.15, alpha=2, beta=0),
-                label='Reference',
-                color='red'
+                label="Reference",
+                color="red",
             )
             plt.ylim(0, 1)
             plt.plot(
                 x_values,
                 fisher_information(x_values, r=0.15, alpha=2, beta=0),
-                linestyle='dashed',
-                color='red'
+                linestyle="dashed",
+                color="red",
             )
         plt.xlim(xlim[0], xlim[1])
 
@@ -328,13 +337,13 @@ class Question:
         plt.plot(
             x_values,
             self.probability_correct((x_values - mean_ability) / std_ability),
-            label=title
+            label=title,
         )
         plt.plot(
             x_values,
             self.fisher_information((x_values - mean_ability) / std_ability),
-            linestyle='dashed',
-            color=plt.gca().lines[-1].get_color()
+            linestyle="dashed",
+            color=plt.gca().lines[-1].get_color(),
         )
 
         # Add legend and grid
@@ -345,30 +354,32 @@ class Question:
         plt.savefig(f"{target_folder}{file_name}{file_format}")
         plt.cla()
 
+
 def P_3PL(theta, a_i, b_i, c_i):
     return c_i + (1 - c_i) / (1 + np.exp(-a_i * (theta - b_i)))
+
 
 class Student:
     """
     Represents a student in the test analysis.
     """
 
-    def __init__(self, student_index=0, responses=np.nan,ability=0,parameters=None):
+    def __init__(self, student_index=0, responses=np.nan, ability=0, parameters=None):
         """
         Initialize the Student instance.
         Args:
             student_index (int): Index of the student.
             responses (ndarray): Array of responses (0 for incorrect, 1 for correct).
             ability (Float): ability of the student, to be given or estimated by irt.
-            
+
         """
         self.index = student_index
         self.responses = responses
         self.ability = ability
-        self.parameters=parameters
+        self.parameters = parameters
 
-    def set_parameters(self):
-        self.parameters=parameters
+    def set_parameters(self, parameters):
+        self.parameters = parameters
         return True
 
     def get_correct_responses(self):
@@ -383,7 +394,7 @@ class Student:
             responses.append(self.data[k])
         return np.asarray(responses)
 
-    def log_likelihood(self, theta=np.nan):
+    def log_likelihood(self, theta: float = np.nan) -> float:
         """
         Compute the log-likelihood for a given ability parameter.
         Args:
@@ -392,22 +403,18 @@ class Student:
             float: Log-likelihood value.
         """
         if np.isnan(theta):
-            theta=self.ability
+            theta = self.ability
 
-
-
-        self.parameters['P'] = self.parameters['c'] + (
-            1.0 - self.parameters['c']
-        ) / (1 + np.exp(-self.parameters['a'] * (theta - self.parameters['b'])))
-        self.parameters['Q'] = 1 - self.parameters['P']
-        self.parameters['response_ij'] = self.responses
-        self.parameters['log_likelihood_ij'] = (
-            1 - self.parameters['null']
-        ) * (
-            self.parameters['response_ij'] * np.log(self.parameters['P'])
-            + (1 - self.parameters['response_ij']) * np.log(self.parameters['Q'])
+        self.parameters["P"] = self.parameters["c"] + (1.0 - self.parameters["c"]) / (
+            1 + np.exp(-self.parameters["a"] * (theta - self.parameters["b"]))
         )
-        return self.parameters['log_likelihood_ij'].sum()
+        self.parameters["Q"] = 1 - self.parameters["P"]
+        self.parameters["response_ij"] = self.responses
+        self.parameters["log_likelihood_ij"] = (1 - self.parameters["null"]) * (
+            self.parameters["response_ij"] * np.log(self.parameters["P"])
+            + (1 - self.parameters["response_ij"]) * np.log(self.parameters["Q"])
+        )
+        return self.parameters["log_likelihood_ij"].sum()
 
     def negative_log_likelihood(self, theta):
         """
@@ -430,14 +437,22 @@ class Student:
         self.ability = float(theta)
         return self.ability
 
-    def likelihood(self,theta=np.nan):
+    def likelihood(self, theta=np.nan):
         if np.isnan(theta):
-            theta=self.ability
+            theta = self.ability
 
-        prob = [logistic_model(theta, self.parameters['a'][i], self.parameters['b'][i], self.parameters['c'][i]) for i in range(len(self.responses))]
+        prob = [
+            logistic_model(
+                theta,
+                self.parameters["a"][i],
+                self.parameters["b"][i],
+                self.parameters["c"][i],
+            )
+            for i in range(len(self.responses))
+        ]
         return np.prod([p if r == 1 else (1 - p) for p, r in zip(prob, self.responses)])
 
-    def calculate_ability(self, method='NM'):
+    def calculate_ability(self, method="EAP", loc_prior=0, scale_prior=1):
         """
         Calculate the student's ability using optimization.
         Args:
@@ -447,32 +462,57 @@ class Student:
         """
         theta_initial = self.ability
 
-        if method == 'NM':  # Nelder-Mead method
-            res = opt.minimize(self.negative_log_likelihood, theta_initial, method='Nelder-Mead', tol=1e-4)
+        if method == "NM":  # Nelder-Mead method
+            res = opt.minimize(
+                self.negative_log_likelihood,
+                theta_initial,
+                method="Nelder-Mead",
+                tol=1e-4,
+            )
             theta = res.x[0]
             self.set_ability(theta)
             return theta
 
-        if method == 'NR':  # Newton-Raphson method
+        if method == "NR":  # Newton-Raphson method
             # Placeholder for Newton-Raphson logic
             pass
 
-        if method == 'EAP':  # Expected a posteriori
+        if method == "EAP":  # Expected a posteriori
             # Adjusted a posteriori probability distribution
             def posterior(theta, a, b, c, responses):
-                prior = norm.pdf(theta, loc=0, scale=1)  # Prior normal distribution
+                prior = norm.pdf(
+                    theta, loc=loc_prior, scale=scale_prior
+                )  # Prior normal distribution
                 return self.likelihood(theta) * prior
 
             # Estimação por EAP ajustada
             def eap(a, b, c, responses):
-                numerator = lambda theta: theta * posterior(theta, self.parameters['a'], self.parameters['b'], self.parameters['c'], self.responses)
-                denominator = lambda theta: posterior(theta, self.parameters['a'], self.parameters['b'], self.parameters['c'], self.responses)
-                
-                num = quad(numerator, -4, 4)[0]
-                denom = quad(denominator, -4, 4)[0]
-                return num/denom
-            self.ability=eap(self.parameters['a'],self.parameters['b'],self.parameters['c'],self.responses)                
-            pass
+                numerator = lambda theta: theta * posterior(
+                    theta,
+                    self.parameters["a"],
+                    self.parameters["b"],
+                    self.parameters["c"],
+                    self.responses,
+                )
+                denominator = lambda theta: posterior(
+                    theta,
+                    self.parameters["a"],
+                    self.parameters["b"],
+                    self.parameters["c"],
+                    self.responses,
+                )
+
+                num = quad(numerator, -10, 10)[0]
+                denom = quad(denominator, -10, 10)[0]
+                return num / denom
+
+            self.ability = eap(
+                self.parameters["a"],
+                self.parameters["b"],
+                self.parameters["c"],
+                self.responses,
+            )
+            return self.ability
 
     def print_summary(self):
         """
@@ -480,10 +520,11 @@ class Student:
         Returns:
             bool: Always True.
         """
-        print('Index:', self.index)
-        print('Ability:', self.ability)
-        #print('Log(L):', self.log_likelihood(self.ability))
+        print("Index:", self.index)
+        print("Ability:", self.ability)
+        # print('Log(L):', self.log_likelihood(self.ability))
         return True
+
 
 #######################################  TESTING SECTION ######################################33
 
