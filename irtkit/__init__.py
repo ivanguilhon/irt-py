@@ -113,6 +113,7 @@ class Question:
         self.alpha = alpha
         self.beta = beta
         self.guessing_param = guessing_param
+        self.experimental_correctness_curve=[]
 
     def estimate_parameters(self, responses, num_steps=100):
         """
@@ -285,6 +286,54 @@ class Question:
             / p
         )
 
+    def log_likelihood(self, abilities, responses,param=[]):
+        """
+        Compute the log-likelihood for a set of abilities and responses.
+
+        Args:
+            abilities (numpy.ndarray): Array of ability values.
+            responses (numpy.ndarray): Array of binary responses (0 or 1).
+
+        Returns:
+            float: Log-likelihood value.
+        """
+        if len(param)==3:
+            self.set_alpha(param[0])
+            self.set_beta(param[1])
+            self.set_guessing_param(param[2])
+
+        log_likelihood_sum = 0.0
+            
+
+        for j in range(len(responses)):            
+            # Compute the log terms for correct and incorrect probabilities
+            prob_correct = self.probability_correct(abilities[j])
+            prob_incorrect = self.probability_incorrect(abilities[j])
+            
+            # Check for NaN or infinite values in probabilities
+            # if np.isnan(prob_correct) or np.isinf(prob_correct):
+            #     print(f"Warning: Invalid value detected for probability_correct at index {j}.")
+            #     #return None
+            # if np.isnan(prob_incorrect) or np.isinf(prob_incorrect):
+            #     print(f"Warning: Invalid value detected for probability_incorrect at index {j}.")
+            #     #return None
+
+            # Compute the log-likelihood for the current observation
+            term = (
+                responses[j] * np.log(prob_correct) +
+                (1.0 - responses[j]) * np.log(prob_incorrect)
+            )
+
+            #Check for NaN or infinite values in the term
+            if np.isnan(term) or np.isinf(term):
+                print(f"Warning: Invalid log-likelihood term at index {j}.")
+                
+            else:
+                #Accumulate the log-likelihood
+                log_likelihood_sum += term
+
+        return log_likelihood_sum
+    
     def make_figure(
         self,
         target_folder="./",
@@ -314,20 +363,20 @@ class Question:
 
         # Plot experimental data points
         if show_experimental:
-            plt.plot(linewidth=0, marker="o", alpha=0.1, color="blue", markersize=1.5)
+            plt.plot(self.experimental_correctness_curve[0], self.experimental_correctness_curve[1],linewidth=0, marker="o", alpha=0.5, color="blue", markersize=1.5)
 
         # Plot reference curve
         if reference_curve:
             plt.plot(
                 x_values,
-                logistic_model(x_values, r=0.15, alpha=2, beta=0),
+                logistic_model(x_values, 2, 0, 0.15), 
                 label="Reference",
                 color="red",
             )
             plt.ylim(0, 1)
             plt.plot(
                 x_values,
-                fisher_information(x_values, r=0.15, alpha=2, beta=0),
+                fisher_information(x_values,2, 0, 0.15),
                 linestyle="dashed",
                 color="red",
             )
@@ -336,12 +385,12 @@ class Question:
         # Plot question-specific curve
         plt.plot(
             x_values,
-            self.probability_correct((x_values - mean_ability) / std_ability),
+            self.probability_correct((x_values - 0) / 1.0),
             label=title,
         )
         plt.plot(
             x_values,
-            self.fisher_information((x_values - mean_ability) / std_ability),
+            self.fisher_information((x_values - 0) / 1.0),
             linestyle="dashed",
             color=plt.gca().lines[-1].get_color(),
         )
@@ -353,7 +402,112 @@ class Question:
         # Save and clear the plot
         plt.savefig(f"{target_folder}{file_name}{file_format}")
         plt.cla()
+        
+    def estimate_parameters(self, habilities,responses, num_steps=200):
+        """
+        Estimate the parameters of the question using curve fitting.
 
+        Args:
+            responses (DataFrame): DataFrame containing response data, including "Standardized Points".
+            num_steps (int): Number of steps for binning the data (default: 100).
+
+        Returns:
+            ndarray: Estimated parameters [alpha, beta, guessing_param].
+
+        Notes:
+            This function uses `curve_fit` from SciPy to fit a logistic model to the data.
+            The logistic model must be defined in the scope of the class or script.
+        """
+        # Define the step size for binning
+        step_size = int(len(responses) / num_steps)
+
+        # Combine abilities and responses to ensure consistent sorting
+        data = np.array(list(zip(habilities, responses)))
+        data = data[data[:, 0].argsort()]  # Sort by abilities (ascending order)
+
+
+
+
+        # Split sorted data back into abilities and responses
+        sorted_abilities = data[:, 0]
+        sorted_responses = data[:, 1]
+
+        # Initialize variables for summarizing ability and correctness
+        k = 0
+        ability_summary = []
+        correctness_summary = []
+
+        # Calculate mean and standard deviation of standardized points
+        mean_points = sorted_abilities.mean()
+        std_points = sorted_abilities.std()
+
+        # Standardize abilities and sort data by standardized points
+        sorted_abilities = (sorted_abilities - mean_points) / std_points
+
+
+
+        # Iterate through the data and compute summaries for each bin
+        for k in range(num_steps):
+            start_idx = k * step_size
+            end_idx = min((k + 1) * step_size, len(sorted_responses))
+            bin_abilities = sorted_abilities[start_idx:end_idx]
+            bin_responses = sorted_responses[start_idx:end_idx]
+
+            # Skip empty bins (e.g., due to rounding issues in step size)
+            if len(bin_abilities) == 0:
+                continue
+
+            ability_summary.append(bin_abilities.mean())
+            correctness_summary.append(bin_responses.mean())  # Proportion of correct responses in the bin
+
+
+        # Perform curve fitting using a predefined logistic model
+        popt, _ = opt.curve_fit(
+            logistic_model,  # Define or import this function
+            np.array(ability_summary),
+            np.array(correctness_summary),
+            p0=[0.1, 3, 0.2],  # Initial guesses for alpha, beta, guessing_param
+            bounds=([0, -5, 0], [1.5, 5, 1])  # Parameter bounds
+        )
+
+        # Store the expected pattern of correct responses
+        #self.expected_correct_pattern = [        np.asarray(ability_summary),        np.asarray(correctness_summary)    ]
+
+        # Update question parameters
+        self.set_alpha(popt[0])
+        self.set_beta(popt[1])
+        self.set_guessing_param(popt[2])
+
+        self.experimental_correctness_curve= [ability_summary, correctness_summary]
+
+        return popt
+
+    def optimize_parameters(self, abilities,responses, method='Powell'):
+        """
+        Optimize the parameters of the question (alpha, beta, guessing_param)
+        using a specified optimization method.
+
+        Args:
+            method (str): Optimization method to use (default: 'Powell').
+
+        Returns:
+            OptimizeResult: Result of the optimization process, including optimized parameters.
+        """
+        if (method=='Powell'):
+            # Initial guess for the parameters
+            x0 = [self.alpha, self.beta, self.guessing_param]
+
+
+
+            # Minimize the negative log-likelihood using the specified method
+            res = opt.minimize(lambda x: -self.log_likelihood( abilities,responses, param=x) , x0, method='Powell', bounds=((0, 1.5), (-5, 5),(0, 1.0)), tol=1e-4)
+
+            # Update the parameters with optimized values
+            self.set_alpha(res.x[0])
+            self.set_beta(res.x[1])
+            self.set_guessing_param(res.x[2])
+
+            return res
 
 def P_3PL(theta, a_i, b_i, c_i):
     return c_i + (1 - c_i) / (1 + np.exp(-a_i * (theta - b_i)))
